@@ -6,3 +6,6 @@ Qianrun Guo, Ruiqi Li, Ziqi Liao, Xuanyi Zhou
 
 ### Project Topic: Hotel Ratings Review
 Data Source: https://www.kaggle.com/datafiniti/hotel-reviews
+
+### Rpub Link:
+https://rpubs.com/ballballrachel/757362
