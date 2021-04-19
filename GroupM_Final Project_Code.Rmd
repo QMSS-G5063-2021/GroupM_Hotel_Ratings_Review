@@ -1,0 +1,362 @@
+---
+title: "Final Project"
+author: "Group_M_Hotel_Rating"
+date: "4/17/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Goal:
+
+In this report, we are going to analyze 1000 hotels across the US. and customers' reviews toward each hotel. With the data we have, three main questions will be addressed in this data analytic report.
+
+1)  Which states have a relatively developed tourism industry？
+
+This question could be answered by looking at the number of hotels in each states. There is a significant relationship between tourism and hotel industry. Major growth of tourism leads to development of desirable infrastructural facilities such as hotel facilities in the country. Thus, if the state has the highest number of hotels, in general, the state will have a relatively developed tourism industry.
+
+2)  Which states have a relatively higher average hotel rating?
+
+Knowing this information is helpful for tourists who care about the quality of hotels they live when they travel. Tourist can have a better insight to decide which state they are going to visit.
+
+3)  What kind of sentimental words can lead to a higher hotel rating?
+
+Hotel rating is an important index for hotel owners and managers to focus on because a higher hotel rating could attract more tourists to visit their hotels, and in the meanwhile, they could earn more profit. Thus, through the investigation of word sentimental analysis, hotel owners and managers can make a more cost and time efficient plan to "direct" consumers to write more review comments containing sentimental words which are associated with higher hotel rating.
+
+```{r, echo=FALSE, message=FALSE,include=FALSE}
+library(readr)
+library(ggplot2)
+library(leaflet)
+library(dplyr)
+library(tidyverse)
+library(tidytext)
+library(ggthemes)
+library(readr)
+library(tigris)
+library(rgdal)
+library(gridExtra)
+library(lubridate)
+library(tm)
+library(wordcloud)
+library(wordcloud2)
+library(textdata)
+library(reshape2)
+```
+
+```{r, read data, echo=FALSE, message=FALSE, , include=FALSE}
+df <- read.csv("final project/data_with_review.csv")
+d <- read.csv("final project/data_with_review.csv")
+d_s <- readOGR("data/cb_2018_us_state_500k/.","cb_2018_us_state_500k")
+data <- readr::read_csv("data/data_with_review.csv")
+
+# import dictionaires
+afinn <- read_csv("dictionaries/Afinn.csv",
+                  col_types = cols(word = col_character(), value = col_double()))
+bing <- read_csv("dictionaries/Bing.csv",
+                 col_types = cols(word = col_character(),sentiment = col_character()))
+NRC <- read_csv("dictionaries/NRC.csv",
+                col_types = cols(word = col_character(),sentiment = col_character()))
+```
+
+### The general interactive map for each hotel
+
+```{r, ,echo=FALSE}
+d_hotel = aggregate(d$reviews.rating, by = list(d$full_address), FUN = mean)
+colnames(d_hotel) = c('full_address','average_ratings')
+d_hotel$average_ratings = round(d_hotel$average_ratings,2)
+
+colname_no_review = c('name','full_address','city','province','latitude','longitude')
+d_hotel = inner_join(d_hotel,d[,colname_no_review],by = 'full_address')
+d_hotel = unique(d_hotel)
+
+for(i in 1:nrow(d_hotel)){
+  if(d_hotel$average_ratings[i] >= mean(d$reviews.rating)){
+    d_hotel$good_bad[i] = 'Good'
+  } else{
+    d_hotel$good_bad[i] = 'Bad'
+  }
+}
+```
+
+```{r,echo=FALSE}
+leaflet(d_hotel) %>%
+  addTiles() %>%   
+  addMarkers(lng = ~longitude, lat = ~latitude,clusterOptions = markerClusterOptions(),
+             popup= paste('Hotel Name:',d_hotel$name,"<br/>",
+                          'Rating:',d_hotel$average_ratings,"<br/>",
+                          'Address:',d_hotel$full_address)) %>%
+  setView(-122.335167,47.608013, zoom = 3)
+```
+
+Here is the map for the distribution of all of the hotels in the dataset. From the map, we can see that most of the hotel are located on mainland United States of America. If we zoomed in on the map, we can see the biggest hotel clusters are in some of the most populated states, such as California, Florida, New York, etc. Also, for Hawaii, the area is small compared to other locations, but there are 30 hotels sampled from there.
+
+### 1) Which states have a relatively developed tourism industry？
+
+```{r, echo=FALSE}
+d_hotel = aggregate(d$reviews.rating, by = list(d$full_address), FUN = mean)
+colnames(d_hotel) = c('full_address','average_ratings')
+d_hotel$average_ratings = round(d_hotel$average_ratings,2)
+
+colname_no_review = c('name','full_address','city','province','latitude','longitude')
+d_hotel = inner_join(d_hotel,d[,colname_no_review],by = 'full_address')
+d_hotel = unique(d_hotel)
+
+for(i in 1:nrow(d_hotel)){
+  if(d_hotel$average_ratings[i] >= mean(d$reviews.rating)){
+    d_hotel$good_bad[i] = 'Good'
+  } else{
+    d_hotel$good_bad[i] = 'Bad'
+  }
+}
+
+```
+
+```{r, echo=FALSE}
+d_hotel_ = data.frame(table(d_hotel$province))
+colnames(d_hotel_) = c('STUSPS','count')
+```
+
+```{r, echo=FALSE}
+d_s@data = left_join(d_s@data, d_hotel_, by = 'STUSPS')
+```
+
+```{r, echo=FALSE}
+bins = c(10,37,63,84,99,351)
+pal_ = colorBin(palette="YlOrBr", domain = d_s@data$count,na.color = 'transparent', bins = bins)
+text = paste('State: ',d_s@data$NAME, '<br/>',
+             'Hotel Count: ',d_s@data$count, sep='')%>%
+  lapply(htmltools::HTML)
+```
+
+```{r,echo=FALSE}
+leaflet(d_s) %>%
+  addTiles() %>%  
+  setView(-122.335167,47.608013, zoom = 3) %>%
+  addPolygons(
+    fillColor = ~pal_(count),
+    stroke = TRUE,
+    fillOpacity = 0.9, 
+    color="white", 
+    weight=0.3,
+    label = text) %>%
+  addLegend(pal = pal_, values = ~count, opacity = 0.9, title = 'Hotel Count', position = 'bottomleft')
+```
+
+From the map, we can tell that States like California, Texas, Florida, and New York are states that have most hotels. Among these states, California have the most hotels, 351 hotels. The state that holds least hotels are Alaska, which only has 14 hotels.
+
+### 2) Which states have a relatively higher average hotel rating?
+
+```{r,echo=FALSE}
+top10state <- df %>%
+  select(province, reviews.rating) %>%
+  group_by(province) %>%
+  summarise(avg = mean(reviews.rating),
+            total = n()) %>%
+  arrange(desc(avg)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = province, y = avg, fill = province)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = round(avg,2)), size = 5, fill = "white") +
+  labs(title = "Average rating hotels of top 10 state", subtitle = "The highest rating is 5.0") +
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1),
+        axis.title = element_blank(),
+        legend.position="top",
+        legend.key.size = unit(0.5, "cm"),
+        legend.key.width = unit(0.5,"cm"))
+  
+top10state
+```
+
+When it comes to vacations, most people think about Florida, the California coast or Las Vegas. These famous resorts generally have many hotels, but are these hotels rated as high as their popularity? With this question in mind, we calculated the average rating of all hotels in each state and visualized the top ten states. New Mexico has the highest average hotel rating with 4.41 points; followed by Alabama with 4.36 points, and Utah with 4.35 point. These states are not some famous places, but their average scores are high. As this graph only shows the top 10 states and the geographical information is missing, we did further analysis.
+
+```{r, echo=FALSE}
+pal = colorFactor("Set1", domain = d_hotel$good_bad)
+color_offsel = pal(d_hotel$good_bad)
+leaflet(d_hotel) %>%
+  addTiles() %>%   
+  addCircleMarkers(lng = ~longitude, lat = ~latitude,clusterOptions = markerClusterOptions(),
+             color = color_offsel,
+             popup= paste('Hotel Name:',d_hotel$name,"<br/>",
+                          'Rating:',d_hotel$average_ratings,"<br/>",
+                          'Address:',d_hotel$full_address)) %>%
+  addLegend(pal = pal, values = ~d_hotel$good_bad, title = "Hotel Rating") %>%
+  setView(-122.335167,47.608013, zoom = 3)
+```
+
+This is the map that shows the location of each hotel in the dataset, but the hotel is divided into bad and good hotels based on the average ratings of all reviews. If the rating is below the average, it is considered as bad hotel. It is consdiered as good hotel if rating is over average.
+
+```{r, echo=FALSE}
+avgrating <- df %>%
+  select(province, reviews.rating) %>%
+  group_by(province) %>%
+  summarise(avgrating = mean(reviews.rating)) 
+colnames(avgrating)[1] <- "STUSPS"
+d_s@data = left_join(d_s@data, avgrating, by = 'STUSPS')
+```
+
+```{r, echo=FALSE}
+bins_rating = c(3,4,4.2,4.5)
+pal_rating = colorBin(palette="YlOrBr", domain = d_s@data$avgrating,na.color = 'transparent', bins = bins_rating)
+text_rating = paste('State: ',d_s@data$NAME, '<br/>',
+             'Average Rating: ',d_s@data$avgrating, sep='')%>%
+  lapply(htmltools::HTML)
+```
+
+```{r, echo=FALSE}
+leaflet(d_s) %>%
+  addTiles() %>%  
+  setView(-122.335167,47.608013, zoom = 3) %>%
+  addPolygons(
+    fillColor = ~pal_rating(avgrating),
+    stroke = TRUE,
+    fillOpacity = 0.9, 
+    color="white", 
+    weight=0.3,
+    label = text_rating) %>%
+  addLegend(pal = pal_rating, values = ~avgrating, opacity = 0.9, title = 'Average Hotel Rating', position = 'bottomleft')
+```
+
+We display the geographic location of each state, and the darker the color indicates the higher the average score. This result is consistent with the previous histogram. We can see that these places in the central United States and New Mexico are indeed highly rated. But combined with the previous graph, which shows that there are not many hotels in these places. We can say that since there are not a huge amount of hotels, while the qulity of hotels is high, the average rating is relatively high. In fact, if we look at New York and its surroundings, we will find that there are more hotels in New York and their ratings are high. So New York may be a good choice for traveling if you would like to live better.
+
+### 3) What kind of sentimental words can lead to a higher hotel rating?
+
+```{r, analysis of review date, echo=FALSE}
+unnest_words <- df %>% 
+    mutate(text = as.character(df$reviews.text)) %>% 
+    unnest_tokens(word, text)
+
+nrc <- read.csv("final project/NRC.csv")
+
+unnest_words %>% 
+    inner_join(nrc, "word") %>%
+    filter(!sentiment %in% c("positive", "negative")) %>% 
+    count(sentiment, sort=T) %>% 
+    ggplot(aes(x=reorder(sentiment, n), y=n)) +
+    geom_bar(stat="identity", aes(fill=n), show.legend=F) +
+    geom_label(aes(label=format(n, big.mark = ",")), size=3, fill="white") +
+    labs(x="Sentiment", y="Count", title="What is the overall mood in Hotel reviews?") +
+    scale_fill_gradient(low = "green", high = "blue", guide="none") +
+    coord_flip() + 
+    theme(axis.text.x = element_blank())
+```
+
+According to the sentiment analysis, we may find that trust is the top 1 words in hotel reviews and joy is the top 2. Those are all positive words and it corresponds to the hotel average rating score, which is above 4.0 on average.
+
+```{r, echo=FALSE}
+# start with the function of cleaning text
+clean_corpus <- function(corpus){
+  corpus_clean <- tm_map(corpus, removePunctuation) ## remove punctuation
+  corpus_clean <- tm_map(corpus_clean, removeWords, c(stopwords("en"))) ## remove stop words
+  corpus_clean <- tm_map(corpus_clean, removeNumbers) ## remove numbers
+  corpus_clean <- tm_map(corpus_clean, content_transformer(tolower)) # transfer to lowercase
+  corpus_clean <- tm_map(corpus_clean, stripWhitespace) ## remove white space
+  return(corpus_clean)
+}
+```
+
+##### 1. Sentiment Analysis (Positive & Negative)
+
+```{r, echo=FALSE}
+reviews_unnest <- data %>% 
+    mutate(text = as.character(data$reviews.text)) %>% 
+    unnest_tokens(word, reviews.text)
+```
+
+```{r, warning=FALSE, fig.width=6, fig.height=6, echo=FALSE}
+reviews_unnest %>% 
+    inner_join(bing, by="word") %>%
+    count(word, sentiment, sort=T) %>% 
+    acast(word ~ sentiment, value.var = "n", fill=0) %>% 
+    comparison.cloud(colors = c("orange", "purple"),
+                 scale=c(0.1,2), title.size= 2,
+                 max.words = 100)
+```
+
+After pre-processing the text data provided in the column of hotel review, we first broke all the reviews into single words (unigram). Then, we combined the whole bag of single words with the bing dictionary we imported to make the comparison word cloud. This provides us with an overview of the positive and negative words people used in their hotel reviews.
+
+##### 2. Sentiment Analysis (Emotions)
+
+```{r, echo=FALSE}
+nrc_reviews = reviews_unnest %>% 
+    inner_join(NRC, "word") %>%
+    filter(!sentiment %in% c("positive", "negative"))
+nrc = fastDummies::dummy_cols(nrc_reviews, select_columns = "sentiment")
+
+senti = c('sentiment_anger','sentiment_anticipation','sentiment_disgust','sentiment_fear','sentiment_joy','sentiment_sadness','sentiment_surprise','sentiment_trust')
+nrc_d = nrc[,c('name',senti)]
+nrc_a = aggregate(nrc_d[,senti], by = list(nrc_d$name), FUN= sum)
+
+avg_rating = aggregate(data$reviews.rating,by = list(data$name),FUN= mean)
+
+nrc_a = left_join(nrc_a,avg_rating,"Group.1")
+nrc_a = nrc_a[,-1]
+
+model_nrc = lm(x~.,nrc_a)
+
+coef = data.frame(model_nrc$coefficients[2:9])
+rownames(coef) = c('anger','anticipation','disgust','fear','joy','sadness','surprise','trust')
+coef$emotion = rownames(coef)
+coef$negative[coef$model_nrc.coefficients.2.9.<0] = 'Negative'
+coef$negative[coef$model_nrc.coefficients.2.9.>0] = 'Positive'
+coef = coef[order(coef$model_nrc.coefficients.2.9., decreasing = TRUE),]
+coef$emotion <- factor(coef$emotion, levels = coef$emotion)
+
+ggplot(coef,aes(x = emotion, y = model_nrc.coefficients.2.9.,fill = negative))+
+  geom_bar(stat = 'Identity')+
+  labs(x = 'Emotions',y = 'Coefficient',
+       title = 'Coefficient of Emotions',
+       fill = 'Coefficients')
+```
+
+This is the plot shows the coefficient of each emotions. Based on the graph, we can see that surprise is the most positive emotions. If the review contains one surprise related words, the review is expected to increase by 0.02 out of 5 in ratings. On the other hand, disgust is the most negaitve emotion. If one more word related to disgust is used, the the review rating is expected to decrease by 0.04 out of 5.
+
+```{r, echo = TRUE}
+summary(model_nrc)
+```
+
+Based on the model result, we can see that disgust and surprise are significant emotions to predict hotel ratings, along with anticipation and joy.
+
+##### 3. Sentiment Analysis (By Emotional Words)
+
+```{r, fig.width=8, fig.height=6, echo=FALSE}
+reviews_unnest %>% 
+  inner_join(NRC, "word") %>% 
+  count(sentiment, word, sort=T) %>%
+  group_by(sentiment) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:7) %>% 
+  
+  # Plot:
+  ggplot(aes(x=reorder(word, n), y=n)) +
+  geom_col(aes(fill=sentiment), show.legend = F) +
+  facet_wrap(~sentiment, scales = "free_y", nrow = 2, ncol = 5) +
+  coord_flip() +
+  theme_fivethirtyeight() +
+  theme(axis.text.x = element_blank()) +
+  theme(plot.title = element_text(size = 15, face = "bold", hjust = 0.5)) +
+  labs(x="Emotional Words", y="Frequency", title="Sentiment Analysis of Words in Review")
+```
+
+After taking advantage of the bing dictionary, we turned to the sentiment analysis with the usage of NRC dictionary. Basically NRC is the dictionary which assigns each word 8 primary emotions (anger, fear, anticipation, trust, surprise, sadness, joy, and disgust) and the sentiment of positive or negative. This visualization would offer us a new angle of view to get a sense of people's sentiment of their review. As shown above, the sentiment of positive is related much to the words of "clean", "good", "breakfast", "friendly", "helpful", etc; while the sentiment of negative is related much to "small", "bad", "noise", "late", "dirty". etc. In addition, we could also notice that some of the words with positive sentiment are also related to several positive emotions.For instance, "good" is assigned with the emotions of anticipation, joy, surprise, and trust; "friendly" is related to the emotions of anticipation, joy, and trust; and "clean" is also related to "joy" and "trust".
+
+##### 4. Sentiment Analysis: Score Distribution
+
+```{r, echo=FALSE}
+reviews_unnest %>% 
+  # Count how many word per value
+  inner_join(afinn, "word") %>% 
+  group_by(value) %>% 
+  count(value, sort=T)  %>% 
+  
+  # Plot
+  ggplot(aes(x=value, y=n)) +
+  geom_bar(stat="identity", show.legend = F, width = 0.5) +
+  geom_label(aes(label=format(n, big.mark = ",")), size=5) +
+  scale_x_continuous(breaks=seq(-5, 5, 1)) +
+  labs(x="Score (Afinn)", y="Frequency", title="Word Count Distribution of Reviews (Afinn)") +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+```
+
+After taking advantage of the NRC dictionary, we turned to the Afinn dictionary, which assign every word with the score from -5 to +5. The more negative score a word has, the more negative that word is, and vice versa. The bar plot shown above conveys the information that most of the words used by people in their hotel review are with the score of 2 and 3, which are not that positive and kind of moderate with the standard of Afinn. Similarly, the negative side also has most words with the score of -1 and -2.
