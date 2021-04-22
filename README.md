@@ -8,4 +8,4 @@ Qianrun Guo, Ruiqi Li, Ziqi Liao, Xuanyi Zhou
 Data Source: https://www.kaggle.com/datafiniti/hotel-reviews
 
 ### Rpub Link:
-https://rpubs.com/ballballrachel/757362
+https://rpubs.com/ballballrachel/758879
